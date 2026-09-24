@@ -110,6 +110,7 @@ def execute_overview(config: dict, parameters: dict) -> str:
         reasoning_effort=config['reasoning_effort'],
         seed=config['seed'],
         temperature=config['temperature'],
-        return_json=True)
+        return_json=True,
+        call_site="tool:overview")
 
     return "\n\n".join([f"{frame['timestamp']}: {frame['description']}" for frame in json.loads(response.choices[0].message.content)['frames']])

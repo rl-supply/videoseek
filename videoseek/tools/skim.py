@@ -116,6 +116,7 @@ def execute_skim(config: dict, parameters: dict) -> str:
         reasoning_effort="low",
         seed=config["seed"],
         temperature=config["temperature"],
+        call_site="tool:skim",
     )
 
     return response.choices[0].message.content

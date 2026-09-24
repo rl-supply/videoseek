@@ -1,4 +1,5 @@
 import json
+import time
 from typing import List
 from abc import ABC, abstractmethod
 
@@ -6,7 +7,23 @@ from decord import VideoReader
 
 from .core import Action, Observation, Trajectory, TrajectoryStep
 from .tools import DEFAULT_TOOL_REGISTRY
-from .utils import call_llm_api, convert_to_free_form_text_representation, load_subtitles
+from .transcript import TranscriptStore
+from .utils import (
+    call_llm_api,
+    get_trace_recorder,
+    transcript_to_subtitle_segments,
+)
+
+
+DEFAULT_TASK_PROMPT = (
+    "Analyze this interview recording for integrity breaches. "
+    "Use the breach dictionary to decide what is reportable: a breach is only "
+    "real when it is visible in the video AND matches the dictionary definition "
+    "(including its floor and non-examples). "
+    "Locate answer windows with the transcript tool, hunt each window for "
+    "breach evidence, confirm and bound candidate moments, then emit the "
+    "detections via the answer tool."
+)
 
 
 class BaseAgent(ABC):
@@ -34,9 +51,10 @@ class VideoSeekAgent(BaseAgent):
         self,
         config: dict,
         video_path: str,
-        subtitle_path: str,
         output_dir: str,
         tools: list,
+        transcript_path: str = None,
+        transcript_cache_dir: str = None,
         verbose: bool = False,
     ):
         super().__init__()
@@ -49,7 +67,24 @@ class VideoSeekAgent(BaseAgent):
         self.verbose = verbose
 
         self.duration = round(len(self.vr) / self.vr.get_avg_fps(), 2)
-        self.subtitles = load_subtitles(subtitle_path)
+
+        # Transcript: produced once per session (cache → Deepgram), then the
+        # transcript tool slices it per range; the same utterances feed the
+        # vision tools' subtitles channel (they range-filter internally).
+        self.transcript_store = TranscriptStore(
+            video_path=video_path,
+            transcript_path=transcript_path,
+            cache_dir=transcript_cache_dir,
+            deepgram_api_key=config.get("deepgram_api_key"),
+            deepgram_model=config.get("deepgram_model", "nova-3"),
+        )
+        try:
+            self.transcript_store.ensure()
+        except Exception as e:
+            print(f"Warning: transcript unavailable ({e}); running video-only.")
+        self.subtitles = transcript_to_subtitle_segments(
+            self.transcript_store.segments
+        )
 
         # LLM config
         self.model_name = config["model_name"]
@@ -83,6 +118,7 @@ class VideoSeekAgent(BaseAgent):
             overview_num_frames=self.config["frame_sampling_factor"] * self.config["overview_base"],
             skim_num_frames=self.config["frame_sampling_factor"] * self.config["skim_base"],
             focus_num_frames=self.config["frame_sampling_factor"] * self.config["focus_base"],
+            breach_dictionary=self.config.get("breach_dictionary", ""),
         )
         return [{"role": "system", "content": system_prompt}]
 
@@ -110,6 +146,7 @@ class VideoSeekAgent(BaseAgent):
                 tool_choice="required",
                 tools=self.tools,
                 temperature=self.temperature,
+                call_site="agent:parse_actions",
             )
 
             message = response.choices[0].message.json()
@@ -149,9 +186,11 @@ class VideoSeekAgent(BaseAgent):
 
         if function_name == "answer":
             parameters = {"question": self.question, "messages": self.messages}
+        elif function_name == "transcript":
+            parameters.update({"transcript_store": self.transcript_store})
         else:
             parameters.update({"vr": self.vr, "subtitles": self.subtitles})
-        
+
         if self.tool_registry.has_tool(function_name):
             outcome = self.tool_registry.get_function(function_name)(
                 config=self.config, parameters=parameters
@@ -165,9 +204,6 @@ class VideoSeekAgent(BaseAgent):
     def run(self, question: str):
         self.reset()
         self.question = question
-        subtitles_str = convert_to_free_form_text_representation(
-            self.subtitles, content_type="subtitle"
-        )
 
         ############################
         # Input
@@ -177,8 +213,7 @@ class VideoSeekAgent(BaseAgent):
                 "role": "user",
                 "content": (
                     f"Video Duration: {self.duration:.01f}s\n\n"
-                    f"Video Subtitles:\n{subtitles_str}\n\n"
-                    f"Question:\n{question}"
+                    f"Task:\n{question}"
                 ),
             }
         )
@@ -188,7 +223,7 @@ class VideoSeekAgent(BaseAgent):
             print("--------------------------------")
             print(f"Video ID: {video_id} ({self.duration:.01f}s)")
             print("--------------------------------")
-            print(f"Question:")
+            print(f"Task:")
             print(question)
             print("--------------------------------")
 
@@ -219,9 +254,9 @@ class VideoSeekAgent(BaseAgent):
                 reasoning_effort=self.reasoning_effort,
                 seed=self.seed,
                 temperature=self.temperature,
+                call_site="agent:thought",
             )
             thought = response.choices[0].message.content
-            # thought = """I will use the `overview` tool next to get a 32-frame summary of the entire video, so I can (1) locate where the visit to TeamLab Planets happens in the timeline and (2) see what location appears immediately afterward. This will guide which narrower time segment to inspect with `skim` or `focus` in later steps."""
             self.messages.append({"role": "assistant", "content": thought})
             if self.verbose:
                 print(f"[STEP {step+1} / {self.max_steps}] THOUGHT")
@@ -253,10 +288,23 @@ class VideoSeekAgent(BaseAgent):
             # OBSERVATIONS
             ############################################################
             for action in actions:
+                exec_start = time.monotonic()
                 try:
                     outcome = self.__exec_action(action)
                 except Exception as e:
                     outcome = "Tool execution failed."
+                recorder = get_trace_recorder()
+                if recorder is not None:
+                    recorder.record_tool_call(
+                        tool=action.function_name,
+                        parameters={
+                            k: v
+                            for k, v in (action.parameters or {}).items()
+                            if k not in ("vr", "subtitles", "transcript_store", "messages", "question")
+                        },
+                        latency_ms=(time.monotonic() - exec_start) * 1000,
+                        outcome_chars=len(outcome or ""),
+                    )
                 if self.verbose:
                     print(f"[STEP {step+1} / {self.max_steps}] OBSERVATION")
                     print(outcome)
@@ -265,6 +313,7 @@ class VideoSeekAgent(BaseAgent):
                 if action.parameters is not None:
                     action.parameters.pop("vr", None)
                     action.parameters.pop("subtitles", None)
+                    action.parameters.pop("transcript_store", None)
                 self.trajectory_steps.append(
                     TrajectoryStep(
                         step_id=step + 1,
@@ -283,7 +332,7 @@ class VideoSeekAgent(BaseAgent):
                         "content": f"Observation from `{str(action.to_dict())}`:\n{outcome}",
                     }
                 )
-            
+
             if len(actions) == 0:
                 self.messages.append(
                     {
@@ -303,13 +352,15 @@ class VideoSeekAgent(BaseAgent):
         # REACH MAX STEPS BUT NO FINAL ANSWER IS FOUND
         ############################################################
         if self.final_answer is None:
+            from .tools.answer import DETECTION_INSTRUCTION
+
             self.messages.append(
                 {
                     "role": "user",
                     "content": (
-                        "You have reached the maximum number of steps. "
-                        f"Question:\n{question}\n\n"
-                        "If the question is a multiple-choice question, please directly answer with the option's letter from the given choices without any additional text."
+                        "You have reached the maximum number of steps.\n\n"
+                        f"Task:\n{question}\n\n"
+                        f"{DETECTION_INSTRUCTION}"
                     ),
                 }
             )
@@ -323,6 +374,8 @@ class VideoSeekAgent(BaseAgent):
                 reasoning_effort=self.reasoning_effort,
                 seed=self.seed,
                 temperature=self.temperature,
+                return_json=True,
+                call_site="agent:max_steps_fallback",
             )
             self.final_answer = response.choices[0].message.content
             self.messages.append({"role": "assistant", "content": self.final_answer})
@@ -339,4 +392,3 @@ class VideoSeekAgent(BaseAgent):
             final_answer=self.final_answer,
             finish_reason="stop",
         )
-
