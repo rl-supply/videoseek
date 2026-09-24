@@ -101,6 +101,9 @@ class VideoSeekAgent(BaseAgent):
         self.messages = self.construct_initial_messages()
         # trajectory
         self.trajectory_steps: List[TrajectoryStep] = []
+        # `overview` is a once-per-run tool; further calls return a notice
+        # instead of rescanning (keeps the agent from overview-looping).
+        self._overview_used = False
 
     def reset(self):
         """
@@ -108,6 +111,7 @@ class VideoSeekAgent(BaseAgent):
         """
         super().reset()
         self.trajectory_steps = []
+        self._overview_used = False
 
     def construct_initial_messages(self) -> List[dict]:
         """
@@ -191,6 +195,15 @@ class VideoSeekAgent(BaseAgent):
         else:
             parameters.update({"vr": self.vr, "subtitles": self.subtitles})
 
+        if function_name == "overview":
+            if self._overview_used:
+                return (
+                    "The `overview` tool was already used for this video. "
+                    "Continue with `transcript`, `skim`, `focus`, or emit "
+                    "the detections with `answer`."
+                )
+            self._overview_used = True
+
         if self.tool_registry.has_tool(function_name):
             outcome = self.tool_registry.get_function(function_name)(
                 config=self.config, parameters=parameters
@@ -256,7 +269,19 @@ class VideoSeekAgent(BaseAgent):
                 temperature=self.temperature,
                 call_site="agent:thought",
             )
-            thought = response.choices[0].message.content
+            message = response.choices[0].message
+            thought = message.content or getattr(message, "reasoning_content", None) or ""
+            if not thought.strip():
+                # An empty thought leaves nothing for action parsing — ask
+                # for real reasoning instead of letting it degrade into a
+                # blind default tool pick.
+                self.messages.append(
+                    {
+                        "role": "user",
+                        "content": "Your previous response was empty. Provide explicit reasoning about the current state and the next action to take.",
+                    }
+                )
+                continue
             self.messages.append({"role": "assistant", "content": thought})
             if self.verbose:
                 print(f"[STEP {step+1} / {self.max_steps}] THOUGHT")
