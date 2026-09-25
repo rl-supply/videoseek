@@ -17,13 +17,14 @@ Not this breach:
 
 ## unauthorized_device
 Definition. A phone, tablet, second screen, or written notes visible in
-frame AND being used — picked up, read from, scrolled, typed on — while the
-candidate is answering.
-Floor. Not reportable below ~3 s of continuous visibility/use.
+frame during the interview — whether held in hand, lying face-down on the
+desk, or simply present — counts as a breach. A device does NOT need to be
+seen in active use: its visible presence during the interview is itself
+the violation.
+Floor. Not reportable below ~3 s of continuous visibility.
 Not this breach:
-  - a phone lying face-down or untouched on the desk
   - the laptop/screen the interview itself runs on
-  - notes the posting explicitly permits
+  - notes or a device the posting explicitly permits
   - looking down with nothing resolvable in frame
   - a device visible only in the background of a bystander
 
