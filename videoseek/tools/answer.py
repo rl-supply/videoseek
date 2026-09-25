@@ -36,6 +36,11 @@ DETECTION_INSTRUCTION = (
     "- Every detection needs visible evidence you actually observed — cite timestamps.\n"
     "- start_sec/end_sec bound when the breach was VISIBLE in the interview video.\n"
     "- confidence is your calibrated probability that this is a real breach (0-1).\n"
+    "- First reconcile EVERY candidate moment your earlier observations flagged: "
+    "for each one, either emit it as a detection or decide 'dropped because "
+    "<dictionary-grounded reason>'. Do not silently ignore a flagged moment — "
+    "a device visible in frame during the interview is unauthorized_device even "
+    "if you did not see it being used.\n"
     "- If no breach is supported by evidence, return an empty detections array."
 )
 
