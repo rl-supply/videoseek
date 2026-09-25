@@ -24,20 +24,9 @@ answer_tool = {
 }
 
 
-RECONCILE_INSTRUCTION = (
-    "Before emitting detections, list EVERY candidate moment your earlier "
-    "observations flagged (a device visible in frame, sustained downward gaze "
-    "at it, a second person, leaving frame, a different person appearing...). "
-    "For each one give an explicit verdict on its own line:\n"
-    "  BREACH: <breach type> <start>-<end>s — <why it matches the dictionary>\n"
-    "  DROPPED: <moment> — <dictionary-grounded reason>\n"
-    "Remember: a device visible in frame during the interview is "
-    "unauthorized_device even if you did not see it being actively used."
-)
-
 DETECTION_INSTRUCTION = (
-    "Based on the trajectory and your reconciliation above, emit the final "
-    "detections for this interview session.\n"
+    "Based on the trajectory above, emit the final detections for this "
+    "interview session.\n"
     "Return ONLY valid JSON with this exact schema:\n"
     '{"detections": [{"breach": "<one of: '
     + ", ".join(BREACH_TYPES)
@@ -50,15 +39,11 @@ DETECTION_INSTRUCTION = (
     "cover the whole continuous visibility span (first to last frame it appears), "
     "not just the moment of peak activity.\n"
     "- confidence is your calibrated probability that this is a real breach (0-1).\n"
-    "- Every moment you marked BREACH above MUST appear here as a detection; "
-    "do not silently re-drop it.\n"
     "- If no breach is supported by evidence, return an empty detections array."
 )
 
 
-def _request_detections(
-    config: dict, messages: list, json_mode: bool = True, call_site: str = "tool:answer"
-) -> str:
+def _request_detections(config: dict, messages: list) -> str:
     response = call_llm_api(
         messages=messages,
         model_name=config["model_name"],
@@ -69,8 +54,8 @@ def _request_detections(
         reasoning_effort=config["reasoning_effort"],
         seed=config["seed"],
         temperature=config["temperature"],
-        return_json=json_mode,
-        call_site=call_site,
+        return_json=True,
+        call_site="tool:answer",
     )
     if response is None:
         return None
@@ -81,25 +66,10 @@ def execute_answer(config: dict, parameters: dict) -> str:
     """Emit the detection contract from the accumulated trajectory."""
     question = parameters["question"]
     messages = parameters["messages"]
-    # Reconcile first: force an explicit verdict per flagged candidate moment
-    # in free text (landed in the trace), so a bare {"detections": []} would
-    # contradict the model's own stated verdicts.
     messages.append(
         {
             "role": "user",
-            "content": f"Task:\n{question}\n\n{RECONCILE_INSTRUCTION}",
-        }
-    )
-    reconcile = _request_detections(
-        config, messages, json_mode=False, call_site="tool:answer:reconcile"
-    )
-    if reconcile:
-        messages.append({"role": "assistant", "content": reconcile})
-
-    messages.append(
-        {
-            "role": "user",
-            "content": DETECTION_INSTRUCTION,
+            "content": f"Task:\n{question}\n\n{DETECTION_INSTRUCTION}",
         }
     )
     raw = _request_detections(config, messages)

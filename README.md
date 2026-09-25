@@ -11,7 +11,7 @@ model/tool call trace for auditability and cost analysis.
 | breach | meaning |
 |---|---|
 | `looking_off_screen` | candidate reading off a second screen/notes while answering |
-| `unauthorized_device` | phone / extra screen / notes visible AND in use while answering |
+| `unauthorized_device` | phone / extra screen / notes visible in frame during the interview (even untouched) |
 | `multiple_participants` | a second person visibly participating while an answer is produced |
 | `candidate_left_frame` | candidate's face absent from frame ≥ ~10 s mid-interview |
 | `candidate_swap` | a different person answers than the one at session start |
@@ -24,16 +24,16 @@ second-voice are deliberately out of scope (vision-only benchmark).
 
 ## How it works
 
-Think → Act → Observe loop over four perception tools plus `answer`:
+Think → Act → Observe loop over three perception tools plus `answer`.
+The Deepgram diarized transcript is not a tool — it is injected with
+the task input (and also feeds the vision tools' subtitles channel):
 
 - `overview` — coarse whole-video scan (16-frame summary)
-- `transcript` — speaker turns for a requested time range only
-  (Deepgram diarized transcript, sliced per call — "tool, not a dump")
 - `skim` — fast scan of a long segment to localize candidates
 - `focus` — dense 1-fps inspection of a short clip to confirm/bound
 - `answer` — emits the final detections JSON
 
-Intended workflow: **Orient** (overview + transcript) → **Hunt**
+Intended workflow: **Orient** (overview + provided transcript) → **Hunt**
 (skim answer windows) → **Confirm** (focus candidate moments) →
 **Emit** (`answer`).
 
@@ -121,7 +121,7 @@ and pre-bake transcripts so only `api.openrouter.ai` remains).
 ## Repo layout
 
 - `videoseek/agent.py` — think→act→observe loop
-- `videoseek/tools/` — `overview`, `transcript`, `skim`, `focus`, `answer`
+- `videoseek/tools/` — `overview`, `skim`, `focus`, `answer`
 - `videoseek/transcript.py` — ffmpeg → Deepgram → cached TranscriptStore
 - `videoseek/core/detection.py` — detection contract + validation
 - `videoseek/utils.py` — LLM wrapper + TraceRecorder + run_id

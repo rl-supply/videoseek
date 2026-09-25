@@ -20,7 +20,7 @@ DEFAULT_TASK_PROMPT = (
     "Use the breach dictionary to decide what is reportable: a breach is only "
     "real when it is visible in the video AND matches the dictionary definition "
     "(including its floor and non-examples). "
-    "Locate answer windows with the transcript tool, hunt each window for "
+    "Locate answer windows in the provided transcript, hunt each window for "
     "breach evidence, confirm and bound candidate moments, then emit the "
     "detections via the answer tool."
 )
@@ -68,9 +68,9 @@ class VideoSeekAgent(BaseAgent):
 
         self.duration = round(len(self.vr) / self.vr.get_avg_fps(), 2)
 
-        # Transcript: produced once per session (cache → Deepgram), then the
-        # transcript tool slices it per range; the same utterances feed the
-        # vision tools' subtitles channel (they range-filter internally).
+        # Transcript: produced once per session (cache → Deepgram), injected
+        # into the agent's input; the same utterances feed the vision tools'
+        # subtitles channel (they range-filter internally).
         self.transcript_store = TranscriptStore(
             video_path=video_path,
             transcript_path=transcript_path,
@@ -190,8 +190,6 @@ class VideoSeekAgent(BaseAgent):
 
         if function_name == "answer":
             parameters = {"question": self.question, "messages": self.messages}
-        elif function_name == "transcript":
-            parameters.update({"transcript_store": self.transcript_store})
         else:
             parameters.update({"vr": self.vr, "subtitles": self.subtitles})
 
@@ -199,8 +197,8 @@ class VideoSeekAgent(BaseAgent):
             if self._overview_used:
                 return (
                     "The `overview` tool was already used for this video. "
-                    "Continue with `transcript`, `skim`, `focus`, or emit "
-                    "the detections with `answer`."
+                    "Continue with `skim`, `focus`, or emit the detections "
+                    "with `answer`."
                 )
             self._overview_used = True
 
@@ -221,11 +219,16 @@ class VideoSeekAgent(BaseAgent):
         ############################
         # Input
         ############################
+        transcript_text = "\n".join(
+            f"[{s['start']:.1f}s - {s['end']:.1f}s] Speaker {s['speaker']}: {s['transcript']}"
+            for s in self.transcript_store.segments
+        ) or "(transcript unavailable)"
         self.messages.append(
             {
                 "role": "user",
                 "content": (
                     f"Video Duration: {self.duration:.01f}s\n\n"
+                    f"Transcript (diarized speaker turns):\n{transcript_text}\n\n"
                     f"Task:\n{question}"
                 ),
             }
@@ -325,7 +328,7 @@ class VideoSeekAgent(BaseAgent):
                         parameters={
                             k: v
                             for k, v in (action.parameters or {}).items()
-                            if k not in ("vr", "subtitles", "transcript_store", "messages", "question")
+                            if k not in ("vr", "subtitles", "messages", "question")
                         },
                         latency_ms=(time.monotonic() - exec_start) * 1000,
                         outcome_chars=len(outcome or ""),
@@ -338,7 +341,6 @@ class VideoSeekAgent(BaseAgent):
                 if action.parameters is not None:
                     action.parameters.pop("vr", None)
                     action.parameters.pop("subtitles", None)
-                    action.parameters.pop("transcript_store", None)
                 self.trajectory_steps.append(
                     TrajectoryStep(
                         step_id=step + 1,

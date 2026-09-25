@@ -20,4 +20,4 @@ overview_base: 16
 skim_base: 4
 focus_base: 4
 
-tools: ["overview", "transcript", "skim", "focus"]
+tools: ["overview", "skim", "focus"]
