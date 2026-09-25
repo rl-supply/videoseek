@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=64.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "videoseek"
 version = "0.1.0"
-description = "VideoSeek CLI and agent package"
+description = "Cheat-detection video-forensics harness (VideoSeek-based agent)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -14,12 +14,12 @@ dependencies = [
   "numpy",
   "pillow",
   "pyyaml",
+  "requests",
   "yt-dlp",
-  "openai-whisper",
 ]
 
 [project.scripts]
-"videoseek-cli" = "videoseek.cli:main"
+"cheatbench-cli" = "videoseek.cli:main"
 
 [tool.setuptools]
 packages = { find = { include = ["videoseek*", "config*"] } }

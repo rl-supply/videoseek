@@ -100,6 +100,7 @@ def execute_focus(config: dict, parameters: dict) -> str:
         reasoning_effort=config["reasoning_effort"],
         seed=config["seed"],
         temperature=config["temperature"],
+        call_site="tool:focus",
     )
     
     return response.choices[0].message.content

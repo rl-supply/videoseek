@@ -1,0 +1,38 @@
+services:
+  egress-proxy:
+    image: ubuntu/squid:latest
+    volumes:
+      - ./docker/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - internal
+      - external
+    restart: unless-stopped
+
+  agent:
+    build: .
+    image: cheatbench:local
+    depends_on:
+      - egress-proxy
+    networks:
+      - internal   # internal-only: the only way out is through egress-proxy
+    environment:
+      HTTPS_PROXY: http://egress-proxy:3128
+      HTTP_PROXY: http://egress-proxy:3128
+      NO_PROXY: egress-proxy
+      OPENROUTER_API_BASE: ${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      CHEATBENCH_IMAGE_DIGEST: ${CHEATBENCH_IMAGE_DIGEST:-dev}
+    volumes:
+      - ./media:/app/media
+      - ./output:/app/output
+      - ./config/dictionary.md:/app/config/dictionary.md:ro
+    # example invocation (override with `docker compose run agent ...`):
+    #   --video_path /app/media/<file>.mp4 --session_id s001 --verbose
+    entrypoint: ["cheatbench-cli"]
+    profiles: ["run"]
+
+networks:
+  internal:
+    internal: true   # no external route on this network
+  external:

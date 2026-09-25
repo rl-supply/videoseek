@@ -1,12 +1,17 @@
-model_name: "gpt-5"
-api_base: "OPENAI_API_BASE"
-api_key: "OPENAI_API_KEY"
-api_version: "OPENAI_API_VERSION"
+# LLM served through OpenRouter: set env vars OPENROUTER_API_BASE
+# (https://openrouter.ai/api/v1) and OPENROUTER_API_KEY. The values below
+# are the NAMES of the env vars to read, resolved in config/__init__.py.
+model_name: "openrouter/google/gemini-3.7-flash"
+api_base: "OPENROUTER_API_BASE"
+api_key: "OPENROUTER_API_KEY"
+api_version: "OPENROUTER_API_VERSION"
+
+deepgram_model: "nova-3"   # API key read from env DEEPGRAM_API_KEY
 
 reasoning_effort: "medium"
 seed: 42
-temperature: 1.0
-max_steps: 20
+temperature: 0.0
+max_steps: 30
 max_retries: 8
 max_tokens: 32768
 

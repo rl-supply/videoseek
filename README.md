@@ -1,130 +1,134 @@
-# VideoSeek: Long-Horizon Video Agent with Tool-Guided Seeking
+# CheatBench — Video Cheat-Detection Harness
 
-[![Paper](https://img.shields.io/badge/cs.CV-Paper-b31b1b?logo=arxiv&logoColor=red)](https://arxiv.org/abs/2603.20185)
-[![License](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
+An interview-integrity benchmark harness built on the
+[VideoSeek](https://arxiv.org/abs/2603.20185) tool-guided seeking agent.
+The agent reviews a recorded interview and reports **visible integrity
+breaches** as a structured detection artifact — plus a complete
+model/tool call trace for auditability and cost analysis.
 
-<div>
-  <a href="https://jylin.me/">Jingyang Lin</a><sup>1,2</sup>,
-  <a href="https://jialianwu.com/">Jialian Wu</a><sup>1</sup>,
-  <a href="https://joellliu.github.io/">Jiang Liu</a><sup>1</sup>,
-  <a href="https://cs-people.bu.edu/sunxm/">Ximeng Sun</a><sup>1</sup>,
-  <a href="https://zewang95.github.io/">Ze Wang</a><sup>1</sup>,
-  <a href="https://www.xiaodongyu.me/">Xiaodong Yu</a><sup>1</sup>,
-  <a href="https://www.cs.rochester.edu/u/jluo/">Jiebo Luo</a><sup>2</sup>,
-  <a href="https://zicliu.wixsite.com/mysite">Zicheng Liu</a><sup>1</sup>,
-  <a href="https://scholar.google.com/citations?user=bX1YILcAAAAJ">Emad Barsoum</a><sup>1</sup>
-  <br>
-  <sup>1</sup>AMD&emsp; 
-  <sup>2</sup>University of Rochester&emsp; 
-</div>
+## Reportable breaches (dictionary v0.1)
 
-This repository contains the official implementation of the [VideoSeek](https://arxiv.org/abs/2603.20185) agent.
+| breach | meaning |
+|---|---|
+| `looking_off_screen` | candidate reading off a second screen/notes while answering |
+| `unauthorized_device` | phone / extra screen / notes visible in frame during the interview (even untouched) |
+| `multiple_participants` | a second person visibly participating while an answer is produced |
+| `candidate_left_frame` | candidate's face absent from frame ≥ ~10 s mid-interview |
+| `candidate_swap` | a different person answers than the one at session start |
 
-## Introduction
+Definitions, floors, and non-examples live in `config/dictionary.md` —
+the agent only reports what's in the dictionary (its *floor* is what
+keeps a candidate reading the question, a passer-by in the background,
+or a momentary glance from becoming a detection). Deepfake and
+second-voice are deliberately out of scope (vision-only benchmark).
 
-VideoSeek is a long-horizon video agent that leverages video logic flow to actively seek answer-critical evidence instead of exhaustively parsing the full video.
-![alt text](assets/videoseek.png)
+## How it works
 
-VideoSeek (w/ subtitles) achieves the best performance while processing only about 1/300 as many frames as the second-best video agent.
+Think → Act → Observe loop over three perception tools plus `answer`.
+The Deepgram diarized transcript is not a tool — it is injected with
+the task input (and also feeds the vision tools' subtitles channel):
 
-Toolkit of the VideoSeek agent, including `<overview>`, `<skim>`, and `<focus>` tools:
-![alt text](assets/toolkit.png)
+- `overview` — coarse whole-video scan (16-frame summary)
+- `skim` — fast scan of a long segment to localize candidates
+- `focus` — dense 1-fps inspection of a short clip to confirm/bound
+- `answer` — emits the final detections JSON
 
-- `<overview>`: rapidly scans the entire video to build a coarse storyline and highlight promising intervals. 
-- `<skim>`: takes a quick glance at these candidate intervals at low cost to check whether query-relevant evidence is nearby.
-- `<focus>`: zooms in on a fine-grained clip with dense inspection to obtain answer-critical observations.
+Intended workflow: **Orient** (overview + provided transcript) → **Hunt**
+(skim answer windows) → **Confirm** (focus candidate moments) →
+**Emit** (`answer`).
 
-
-
-## Installation
-
-1. Create a conda virtual environment and activate it:
-
-```bash
-conda create -n videoseek python==3.13
-conda activate videoseek
-```
-
-2. Clone the repository:
+## Install
 
 ```bash
-git clone https://github.com/jylins/videoseek
-cd videoseek
+pip install -e .          # needs ffmpeg on PATH for audio extraction
 ```
 
-3. Install the package:
+Secrets/config via env vars:
 
-```bash
-pip install -e .
-```
+| env var | purpose |
+|---|---|
+| `OPENROUTER_API_KEY` | LLM key (models routed via OpenRouter) |
+| `OPENROUTER_API_BASE` | default `https://openrouter.ai/api/v1` |
+| `OPENROUTER_API_VERSION` | optional |
+| `DEEPGRAM_API_KEY` | transcript generation (optional — see below) |
 
-Notes:
-
-- **`ffmpeg` is required**.
+Default model: `openrouter/google/gemini-3.7-flash` (change via
+`--model_name` or `config/general.yaml`).
 
 ## Usage
 
-### CLI
+```bash
+# local file
+cheatbench-cli --video_path ./media/session01.mp4 --session_id s001 --verbose
 
-Please execute `videoseek-cli -h` for help:
-```
-usage: videoseek [-h] --video_path VIDEO_PATH --user_query USER_QUERY [--subtitle_path SUBTITLE_PATH] [--output_dir OUTPUT_DIR] [--verbose] [--model_name MODEL_NAME] [--api_base API_BASE] [--api_key API_KEY] [--api_version API_VERSION]
-                 [--reasoning_effort REASONING_EFFORT] [--seed SEED] [--temperature TEMPERATURE] [--max_tokens MAX_TOKENS] [--max_steps MAX_STEPS]
+# remote video — downloaded via yt-dlp first
+cheatbench-cli --video_path "https://youtube.com/watch?v=..." --session_id s001
 
-options:
-  -h, --help            show this help message and exit
-  --video_path VIDEO_PATH
-                        YouTube URL or local path to video.
-  --user_query USER_QUERY
-                        Question/query towards this video.
-  --subtitle_path SUBTITLE_PATH
-                        Local path to subtitle file.
-  --output_dir OUTPUT_DIR
-                        Directory to write outputs (default: ./output/).
-  --verbose             Print agent step logs.
-  --model_name MODEL_NAME
-                        Model name.
-  --api_base API_BASE   API base.
-  --api_key API_KEY     API key.
-  --api_version API_VERSION
-                        API version.
-  --reasoning_effort REASONING_EFFORT
-                        Reasoning effort of the LLM.
-  --seed SEED           Seed.
-  --temperature TEMPERATURE
-                        Temperature.
-  --max_tokens MAX_TOKENS
-                        Max output tokens of the LLM.
-  --max_steps MAX_STEPS
-                        Max steps of the VideoSeek agent.
+# offline transcription: pre-bake the transcript, no Deepgram needed
+python scripts/prepare_session.py --video_path ./media/session01.mp4 --session_id s001
+cheatbench-cli --video_path ./media/session01.mp4 --session_id s001 \
+    --transcript_path ./media/session01.transcript.json
 ```
 
+`--task` overrides the default analysis task; `--max_steps`,
+`--reasoning_effort`, `--temperature`, `--seed`, `--max_tokens` tune the
+agent loop. Run `cheatbench-cli -h` for the full list.
 
-Run with a local video:
+### Transcript resolution order
+
+1. `--transcript_path` if given;
+2. `<video_stem>.transcript.json` next to the video / in `--media_dir`;
+3. live generation: ffmpeg audio → Deepgram (`nova-3`, diarize +
+   utterances) → cache written beside the video.
+
+Without a transcript the agent runs video-only (a warning is printed).
+
+## Outputs (bench contract)
+
+Written to `--output_dir` (default `./output/`):
+
+- `<session_id>.detections.json` — the score artifact:
+  `{session_id, duration_sec, model_id, run_id, status, detections: [{breach, start_sec, end_sec, confidence, evidence}]}`
+- `<session_id>.trace.jsonl` — every LLM call (`call_site`, tokens,
+  latency, cost) and every tool call (parameters, latency)
+- `<session_id>_<timestamp>/trajectory.json` — full agent trajectory
+
+`run_id = sha256(image_digest ‖ manifest.sha256 ‖ media.sha256 ‖
+dictionary.sha256 ‖ model_id ‖ decode_params.sha256)[:16]` — any change
+to a pinned input is a new run, which is what makes scores comparable.
+`image_digest` comes from `CHEATBENCH_IMAGE_DIGEST` (default `dev`).
+
+Invalid model output fails loudly: unparsable/invalid detections land in
+`status: "failed"` with the error, never silently coerced.
+
+## Isolated bench runs
+
+The agent phase is sandboxed behind an allowlist egress proxy: video
+download and Deepgram happen in a prep step *with* network; the agent
+container only reaches the destinations in `docker/squid.conf`
+(OpenRouter, Deepgram, YouTube/video CDN hosts) — all other egress is
+denied.
 
 ```bash
-# Example from LVBench (qid: 3094)
-videoseek-cli \
-    --video_path ./wgBlACG927Y.mp4 \
-    --subtitle_path ./wgBlACG927Y.srt \
-    --user_query "What animal statue is under the Dong Men Ding Food Street sign?\n(A) Hawk\n(B) Panda\n(C) Tiger\n(D) Lion\nPlease directly answer with the best option's letter from the given choices directly (A, B, C, or D)." \
-    --verbose
+export OPENROUTER_API_KEY=... DEEPGRAM_API_KEY=...
+scripts/run_isolated.sh "https://youtube.com/watch?v=..." s001
 ```
 
-Outputs are written under `output/<VIDEO_ID>_<timestamp>/`:
+To tighten further, remove unneeded `dstdomain` lines from
+`docker/squid.conf` (e.g. for fully offline media, drop the video hosts
+and pre-bake transcripts so only `api.openrouter.ai` remains).
 
-- `prediction.json`
-- `trajectory.json`
+## Repo layout
 
-## Citation
+- `videoseek/agent.py` — think→act→observe loop
+- `videoseek/tools/` — `overview`, `skim`, `focus`, `answer`
+- `videoseek/transcript.py` — ffmpeg → Deepgram → cached TranscriptStore
+- `videoseek/core/detection.py` — detection contract + validation
+- `videoseek/utils.py` — LLM wrapper + TraceRecorder + run_id
+- `config/prompts.yaml` — forensic-analyst system prompt
+- `config/dictionary.md` — breach dictionary (edit to change policy)
+- `scripts/prepare_session.py`, `scripts/run_isolated.sh` — bench flow
+- `Dockerfile`, `docker-compose.yml`, `docker/squid.conf` — isolation
 
-If you find our work useful, please consider citing:
-
-```bibtex
-@article{lin2026videoseek,
-  title={VideoSeek: Long-Horizon Video Agent with Tool-Guided Seeking},
-  author={Lin, Jingyang and Wu, Jialian and Liu, Jiang and Sun, Ximeng and Wang, Ze and Yu, Xiaodong and Luo, Jiebo and Liu, Zicheng and Barsoum, Emad},
-  journal={arXiv preprint arXiv:2603.20185},
-  year={2026}
-}
-```
+*Forked from [jylins/videoseek](https://github.com/jylins/videoseek)
+(VideoSeek: Long-Horizon Video Agent with Tool-Guided Seeking).*

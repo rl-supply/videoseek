@@ -33,7 +33,7 @@ class Trajectory:
         return {
             "question": self.question,
             "steps": [s.to_dict() for s in self.steps],
-            "total_steps": max(s.step_id for s in self.steps),
+            "total_steps": max((s.step_id for s in self.steps), default=0),
             "final_answer": self.final_answer,
             "finish_reason": self.finish_reason,
         }
