@@ -6,8 +6,10 @@ definition below — including its floor and non-examples.
 
 ## looking_off_screen
 Definition. The candidate's gaze is directed off-camera while producing an
-answer — reading from a second screen, notes, or a prompt outside the frame.
-Pattern of repeated, sustained off-axis glances during answers.
+answer — reading from a second screen, notes, a prompt outside the frame,
+or looking down/elsewhere to get clues for the answer. Sustained off-axis
+gaze during answers IS reportable even when no device or prompt is
+resolvable in frame — the gaze behavior itself is the breach.
 Floor. Not reportable below ~3 s of sustained off-screen gaze, and single
 momentary glances are not reportable.
 Not this breach:
@@ -25,7 +27,8 @@ Floor. Not reportable below ~3 s of continuous visibility.
 Not this breach:
   - the laptop/screen the interview itself runs on
   - notes or a device the posting explicitly permits
-  - looking down with nothing resolvable in frame
+  - looking down with nothing resolvable in frame (that is
+    `looking_off_screen` instead when sustained while answering)
   - a device visible only in the background of a bystander
 
 ## multiple_participants
@@ -43,7 +46,7 @@ Not this breach:
 Definition. The candidate's face is not visible in frame for a sustained
 stretch while the interview is in progress — they left their seat or moved
 fully out of view.
-Floor. Not reportable below ~10 s of absence; brief leans or reaches
+Floor. Not reportable below ~5 s of absence; brief leans or reaches
 partially out of frame do not count.
 Not this breach:
   - the camera feed dropping or freezing (a technical artifact, not a breach)
