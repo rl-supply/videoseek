@@ -51,7 +51,7 @@ SYSTEM_PROMPT: |
 
   ## Evidence & Sufficiency & Uncertainty
   - A detection requires VISIBLE evidence you actually observed — cite frames/timestamps in `evidence`.
-  - Normal behavior is not a breach: glancing away while a question is read out, a passer-by crossing behind, stepping away between questions — these are dictionary non-examples, not detections. (Any visible phone/device IS a breach per the dictionary — even untouched.)
+  - Every emitted detection carries a `severity` (high/medium/low) assigned per the breach's Flag tiers in the dictionary; DISCARD-tier evidence must not be emitted.
   - If evidence is insufficient for a candidate moment, collect more or drop it — never guess.
   - An empty detections list is a valid, valuable outcome for a clean session.
 

@@ -9,12 +9,15 @@ BREACH_TYPES = (
     "candidate_swap",
 )
 
+SEVERITIES = ("high", "medium", "low")
+
 
 class Detection:
     """One breach detection emitted by the agent.
 
     Contract (benchmark deck): breach (enum), start_sec, end_sec,
-    confidence (0-1), evidence (free-text citation of what was seen).
+    confidence (0-1), evidence (free-text citation of what was seen),
+    severity (high|medium|low — taxonomy tier the detection was flagged at).
     """
 
     def __init__(
@@ -24,12 +27,14 @@ class Detection:
         end_sec: float,
         confidence: float,
         evidence: str,
+        severity: str = None,
     ):
         self.breach = breach
         self.start_sec = float(start_sec)
         self.end_sec = float(end_sec)
         self.confidence = float(confidence)
         self.evidence = evidence
+        self.severity = severity
 
     def validate(self) -> List[str]:
         errors = []
@@ -43,16 +48,21 @@ class Detection:
             errors.append("confidence must be in [0, 1]")
         if not isinstance(self.evidence, str) or not self.evidence.strip():
             errors.append("evidence must be a non-empty string")
+        if self.severity is not None and self.severity not in SEVERITIES:
+            errors.append(f"invalid severity: {self.severity!r}")
         return errors
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "breach": self.breach,
             "start_sec": round(self.start_sec, 2),
             "end_sec": round(self.end_sec, 2),
             "confidence": round(self.confidence, 3),
             "evidence": self.evidence,
         }
+        if self.severity is not None:
+            d["severity"] = self.severity
+        return d
 
 
 class DetectionReport:
@@ -114,6 +124,7 @@ def parse_detections(raw: str) -> List[Detection]:
                 end_sec=float(item["end_sec"]),
                 confidence=float(item["confidence"]),
                 evidence=str(item.get("evidence", "")),
+                severity=(str(item["severity"]).lower() if item.get("severity") is not None else None),
             )
         except (KeyError, TypeError, ValueError) as e:
             problems.append(f"detection[{idx}] malformed: {e}")

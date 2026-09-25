@@ -31,9 +31,12 @@ DETECTION_INSTRUCTION = (
     '{"detections": [{"breach": "<one of: '
     + ", ".join(BREACH_TYPES)
     + '>", "start_sec": <float>, "end_sec": <float>, '
+    '"severity": "<high|medium|low>", '
     '"confidence": <float 0-1>, "evidence": "<what was seen, with frame/timestamp citations>"}]}\n'
     "Rules:\n"
     "- Only report breaches from the enum above; never invent breach names.\n"
+    "- Set `severity` per the taxonomy tiers (Flag HIGH/MEDIUM/LOW); "
+    "evidence at a DISCARD tier must NOT be emitted at all.\n"
     "- Every detection needs visible evidence you actually observed — cite timestamps.\n"
     "- start_sec/end_sec bound when the breach was VISIBLE in the interview video — "
     "cover the whole continuous visibility span (first to last frame it appears), "
