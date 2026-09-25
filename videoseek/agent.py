@@ -25,6 +25,9 @@ DEFAULT_TASK_PROMPT = (
     "detections via the answer tool."
 )
 
+# Consecutive empty model responses retried without consuming step budget.
+MAX_EMPTY_RETRIES = 30
+
 
 class BaseAgent(ABC):
     def __init__(self) -> None:
@@ -243,7 +246,9 @@ class VideoSeekAgent(BaseAgent):
             print(question)
             print("--------------------------------")
 
-        for step in range(self.max_steps):
+        step = 0
+        empty_retries = 0
+        while step < self.max_steps:
             self.messages.append(
                 {
                     "role": "user",
@@ -277,17 +282,28 @@ class VideoSeekAgent(BaseAgent):
             if not thought.strip():
                 # An empty thought leaves nothing for action parsing — ask
                 # for real reasoning instead of letting it degrade into a
-                # blind default tool pick.
+                # blind default tool pick. The retry is free (doesn't burn
+                # step budget) up to a cap, so a transient streak of empty
+                # responses can't starve the run.
+                empty_retries += 1
                 self.messages.append(
                     {
                         "role": "user",
                         "content": "Your previous response was empty. Provide explicit reasoning about the current state and the next action to take.",
                     }
                 )
+                if empty_retries <= MAX_EMPTY_RETRIES:
+                    continue
+                # Streak exceeds the cap — burn one step and keep going
+                # rather than parsing a blind action from an empty thought.
+                empty_retries = 0
+                step += 1
                 continue
+            empty_retries = 0
+            step += 1
             self.messages.append({"role": "assistant", "content": thought})
             if self.verbose:
-                print(f"[STEP {step+1} / {self.max_steps}] THOUGHT")
+                print(f"[STEP {step} / {self.max_steps}] THOUGHT")
                 print(thought)
                 print("--------------------------------")
 
@@ -296,7 +312,7 @@ class VideoSeekAgent(BaseAgent):
             ############################################################
             actions = self.__parse_actions(thought)
             if self.verbose:
-                print(f"[STEP {step+1} / {self.max_steps}] ACTIONS")
+                print(f"[STEP {step} / {self.max_steps}] ACTIONS")
                 print([str(action) for action in actions])
                 print("--------------------------------")
             if len(actions) != 0 and actions[0].function_name != "answer":
@@ -334,7 +350,7 @@ class VideoSeekAgent(BaseAgent):
                         outcome_chars=len(outcome or ""),
                     )
                 if self.verbose:
-                    print(f"[STEP {step+1} / {self.max_steps}] OBSERVATION")
+                    print(f"[STEP {step} / {self.max_steps}] OBSERVATION")
                     print(outcome)
                     print("--------------------------------")
                 observation = Observation(action=action, outcome=outcome)
@@ -343,7 +359,7 @@ class VideoSeekAgent(BaseAgent):
                     action.parameters.pop("subtitles", None)
                 self.trajectory_steps.append(
                     TrajectoryStep(
-                        step_id=step + 1,
+                        step_id=step,
                         thought=thought,
                         action=action,
                         observation=observation,
